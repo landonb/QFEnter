@@ -110,6 +110,33 @@ function! s:OpenQFItem(tabwinfunc, qfopencmd, qflnum)
 	let prev_qf_winnr = winnr()
 	let orig_prev_qf_winnr = prev_qf_winnr
 
+	" (lb): Remember the current buffer number (the quickfix buffer number),
+	" and the current cursor position within it (which we'll restore later).
+	" - We'll restore the quickfix cursor position after invoking the quickfix
+	"   command (e.g., :cc). The quickfix command opens the indicated 'error'
+	"   from the quickfix window, but it also moves the cursor back to the
+	"   first column.
+	"   - My use case: To preserve window jumping continuity. Specifically,
+	"     I have (tmux + Vim) window jumpers wired to the Ctrl+Super+Arrow
+	"     keys. So I can Ctrl-Super-Up and Ctrl-Super-Down back and forth
+	"     between the quickfix and some window above it. But once I <CR> a
+	"     quickfix line to open the file, the cursor resets to column 0, and
+	"     then the Ctrl-Super-Up goes to the leftmost window, which is not
+	"     necessarily the window to which it had been going! By restoring
+	"     the cursor position, I can Ctrl-Super-Down to quickfix, <CR> to
+	"     open a file in the window that I had just jumped downed from, and
+	"     then I can Ctrl-Super-Down and Ctrl-Super-Up back and forth between
+	"     those two windows. (Without restoring the cursor position, if it
+	"     remains in the first column, then after <CR> to open a file and
+	"     Ctrl-Super-Down to jump back down to quickfix, a Ctrl-Super-Up
+	"     would move the cursor to the left-most window, and not necesarily
+	"     to the window it was just in! And for me, the left-most window
+	"     is normally the project tray, which I don't open quickfix errors
+	"     in, so opening a quickfix error almost certainly breaks my jump
+	"     flow. Refs: landonb/vim-tmux-navigator, landonb/dubs_project_tray.)
+	let l:qfbufnr = bufnr('%')
+	let l:qf_restore_cursor = getpos(".")
+
 	" jump to a window or tab in which quickfix item to be opened
 	exec 'let ret = '.a:tabwinfunc.'()'
 	let target_tabnr = ret[0]
@@ -133,6 +160,13 @@ function! s:OpenQFItem(tabwinfunc, qfopencmd, qflnum)
 			if target_newtabwin==#'nw' && prev_qf_winnr >= target_winnr
 				let prev_qf_winnr += 1
 			endif
+			" (lb): See my previous comment. This is the path QFEnter always
+			" takes for me (as I only use <CR> or double-click to open 'errors').
+			" - I didn't change any code here, just highlighting the 2 JumpToWin
+			"   calls here -- and because hasfocus=1, the `!hasfocus` branch was
+			"   not taken, so this first JumpToWin(prev_qf_winnr) is a no-op;
+			"   and then the cursor is moved to the target window to receive
+			"   the open file (from which :cc will be run).
 			call s:JumpToWin(prev_qf_winnr)
 			call s:JumpToWin(target_winnr)
 		endif
@@ -171,6 +205,30 @@ function! s:OpenQFItem(tabwinfunc, qfopencmd, qflnum)
 	elseif a:qfopencmd==#'cp'
 		call s:ExecuteCP(lnumqf, isloclist)
 	endif
+
+	" (lb): See my previous comments. / Above, this plugin moved the cursor
+	" to the target window and then called :cc (if user <CR>'ed or double-
+	" clicked). Vim then highlighted the quickfix 'error' that the cursor
+	" was on and opened the associated file. Vim also moved the cursor to
+	" the first column in the quickfix buffer. / Here we restore the cursor
+	" position, so that using the vim-tmux-navigator plugin window jumper
+	" jumps back to where it was previously jumping in the quickfix buffer.
+	" - Note that I only use <CR> and double-click to open quickfix errors,
+	"   so this is the only use case I've tested. (Works for me!) But I half-
+	"   assume this approach is generic enough for all the different QFEnter
+	"   commands (at least those that don't open a new tab).
+	" - First, resolve the quickfix buffer number to its window number (which
+	"   may have changed, if a new window was opened). Then, call win_execute
+	"   to run setpos() within that buffer (Vim silently activates that window,
+	"   runs the command, then returns to the current window).
+	let l:qfwinnr = bufwinid(l:qfbufnr)
+	" Note that the code snippet I saw online calls 'redraw', but I haven't
+	" found that necessary, e.g.,:
+	"   call win_execute(l:qfwinnr, [
+	"     \ 'call setpos(".", ' . string(l:qf_restore_cursor) . ')',
+	"     \ 'redraw'
+	"     \ ])
+	call win_execute(l:qfwinnr, 'call setpos(".", ' . string(l:qf_restore_cursor) . ')')
 
 	" check if switchbuf applied.
 	" if useopen or usetab are applied with new window or tab command, close
