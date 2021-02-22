@@ -51,18 +51,18 @@ endfunction
 "      - otherwise: the target window is one of existing windows
 
 function! QFEnter#GetTabWinNR_Open()
-	wincmd p
+	call s:GoToPreviousWindowOrFirstNonSpecial()
 	return [tabpagenr(), winnr(), 1, '']
 endfunction
 
 function! QFEnter#GetTabWinNR_VOpen()
-	wincmd p
+	call s:GoToPreviousWindowOrFirstNonSpecial()
 	vnew
 	return [tabpagenr(), winnr(), 1, 'nw']
 endfunction
 
 function! QFEnter#GetTabWinNR_HOpen()
-	wincmd p
+	call s:GoToPreviousWindowOrFirstNonSpecial()
 	new
 	return [tabpagenr(), winnr(), 1, 'nw']
 endfunction
@@ -88,11 +88,25 @@ function! QFEnter#GetTabWinNR_TOpen()
 	endif
 
 	" add this line to match the behavior of VOpen() and HOpen()
+	" (lb): Checking non-special won't matter in new tab, so skip:
+	" 	" call s:GoToPreviousWindowOrFirstNonSpecial()
 	wincmd p
 
 	tabnew
 
 	return [tabpagenr(), winnr(), 1, 'nt']
+endfunction
+
+function! s:GoToPreviousWindowOrFirstNonSpecial()
+	wincmd p
+
+	if exists('*SensibleOpenMoveCursorAvoidSpecial')
+		" FIXME/2021-02-21: Publish this function to a new plugin.
+		" Sorry folks! For now it's in a private Vim configurator.
+		" - It's mostly useful to avoid sending file to project.vim
+		"   window.
+		call SensibleOpenMoveCursorAvoidSpecial()
+	endif
 endfunction
 
 "qfopencmd: 'cc', 'cn', 'cp'
